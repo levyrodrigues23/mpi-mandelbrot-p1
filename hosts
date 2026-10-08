@@ -1,12 +1,10 @@
-# Hostfile do OpenMPI: lista as 3 maquinas e quantos processos ("slots")
-# cada uma deve rodar. O seu notebook roda o mestre (coordenador) + 1
-# maquina escrava extra, por isso slots=2; as outras duas rodam 1 escravo
-# cada.
+# Hostfile do OpenMPI: quais maquinas participam e quantos processos
+# ("slots") cada uma roda.
 #
-# Troque os IPs abaixo pelos IPs reais de cada maquina na rede local no
-# momento do teste/apresentacao (descubra com "hostname -I" em cada uma
-# -- eles podem mudar de uma rede Wi-Fi para outra).
+# localhost = notebook do Jose (mestre + 1 escravo)
+# diego e lab = apelidos definidos em ~/.ssh/config no notebook do Jose
+# (ver README, passo 3)
 
-192.168.X.10 slots=2   # seu notebook (mestre, rank 0 + 1 escravo)
-192.168.X.11 slots=1   # notebook do Diego
-192.168.X.12 slots=1   # PC do laboratorio
+localhost slots=2
+diego slots=1
+lab slots=1
