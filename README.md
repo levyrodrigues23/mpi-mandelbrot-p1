@@ -49,10 +49,7 @@ make serial     # gera o executável mandelbrot (versão serial, com X11)
    mpirun --hostfile ../hosts -np 4 ./mandelbrot_mpi
    ```
 6. A imagem final fica em `codigo_fonte/saida.ppm`. Para visualizar/anexar
-   no relatório, converta para PNG com `convert saida.ppm saida.png`
-   (ImageMagick) ou, se não tiver o ImageMagick instalado,
-   `python3 ppm2png.py saida.ppm saida.png` (sem dependências, já incluso
-   no repositório).
+   no relatório: `convert saida.ppm saida.png` (ImageMagick).
 
 ## Testar localmente (sem rede, 1 máquina só)
 
