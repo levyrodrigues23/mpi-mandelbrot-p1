@@ -1,0 +1,5 @@
+codigo_fonte/*.o
+codigo_fonte/mandelbrot
+codigo_fonte/mandelbrot_mpi
+codigo_fonte/saida.ppm
+codigo_fonte/saida.png
