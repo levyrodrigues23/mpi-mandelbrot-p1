@@ -57,7 +57,8 @@ explorer.exe saida.png                # abre no Windows (WSL)
 ## Rodar nas 3 máquinas
 
 Máquinas: notebook do José (mestre, WSL), notebook do Diego (WSL) e PC do
-laboratório (Ubuntu). As 3 precisam estar **na mesma rede Wi-Fi/LAN**.
+laboratório (Ubuntu). Cada máquina pode ser **Linux nativo** ou **WSL no
+Windows**; o passo 2 tem uma opção para cada caso. As 3 precisam estar **na mesma rede Wi-Fi/LAN**.
 
 O notebook do José roda 2 processos (o mestre e uma máquina escrava); o do
 Diego e o do lab rodam 1 escravo cada — 4 processos no total.
@@ -71,14 +72,34 @@ o mesmo em todas, instalar as dependências e compilar:
 cd ~
 git clone https://github.com/levyrodrigues23/mpi-mandelbrot-p1.git
 cd mpi-mandelbrot-p1
-sh setup_maquina.sh        # pede a senha do sudo
+bash setup_maquina.sh      # pede a senha do sudo (Linux ou WSL)
 cd codigo_fonte
 make mpi
 hostname -I                # anote o IP desta máquina
 whoami                     # anote o nome de usuário desta máquina
 ```
 
-### Passo 2 — Nos dois notebooks com WSL (José e Diego)
+### Passo 2 — Deixar a máquina acessível pela rede
+
+Cada máquina precisa aceitar conexões SSH vindas das outras. O que fazer
+depende de como ela roda Linux:
+
+#### Opção A — Linux nativo (ex.: PC do laboratório)
+
+1. Garantir que o SSH está rodando:
+   ```sh
+   sudo systemctl enable --now ssh      # ou: sudo service ssh start
+   ```
+2. Se o firewall `ufw` estiver ativo (`sudo ufw status`), liberar a rede
+   local (trocar pela faixa da sua rede, ex. `192.168.0.0/24`):
+   ```sh
+   sudo ufw allow from 192.168.0.0/24
+   ```
+3. Se não tiver `sudo` nessa máquina, pedir ao técnico para instalar
+   `build-essential openmpi-bin libopenmpi-dev openssh-server`. Conferir
+   com `which mpicc mpirun sshd`.
+
+#### Opção B — WSL no Windows (ex.: notebooks do José e do Diego)
 
 Por padrão o WSL não é visível para outros computadores da rede. Para
 resolver:
@@ -92,11 +113,13 @@ resolver:
    WSL:
    ```powershell
    Set-NetFirewallHyperVVMSetting -Name '{40E0AC32-46A5-438A-A0B2-2B479E8F2E90}' -DefaultInboundAction Allow
+   New-NetFirewallRule -DisplayName "WSL SSH" -Direction Inbound -Protocol TCP -LocalPort 22 -Action Allow
    ```
 3. Reiniciar o WSL: `wsl --shutdown` no PowerShell e abrir o Ubuntu de
    novo.
 4. Conferir no Ubuntu que `hostname -I` mostra o mesmo IP do Windows na
-   Wi-Fi (`ipconfig` no PowerShell).
+   Wi-Fi (`ipconfig` no PowerShell). Ignorar IPs `192.168.56.x` e
+   `172.x.x.x` (redes virtuais).
 5. Garantir que o SSH está rodando: `sudo service ssh start`.
 
 ### Passo 3 — No notebook do José: SSH sem senha
@@ -157,7 +180,7 @@ para a maquina Y") e as máquinas calculando. No fim, a imagem fica em
 - **Pede senha ao rodar o `mpirun`**: o passo 3 não funcionou; refazer o
   `ssh-copy-id` e testar `ssh diego echo ok` / `ssh lab echo ok`.
 - **Trava sem terminar**: geralmente é firewall bloqueando a conexão
-  (Windows ou rede da UFC). Conferir o passo 2 nos dois notebooks.
+  (Windows ou rede da UFC). Conferir o passo 2 em todas as máquinas.
 - **"No such file or directory" no executável**: o repositório não foi
   clonado em `~/mpi-mandelbrot-p1` em alguma das máquinas, ou o
   `make mpi` não foi rodado nela.
