@@ -17,7 +17,7 @@ master monta a imagem e grava `saida.ppm`.
 |---|---|---|---|
 | **José** (notebook) | WSL | **MASTER** (organiza e monta a imagem) + calcula | 2 (o master e 1 que calcula) |
 | **Diego** (notebook) | WSL | calcula linhas | 1 |
-| **Lab** (PC) | Ubuntu | calcula linhas | 1 |
+| **Lab** (PC) | Ubuntu (Linux nativo) **ou** WSL no Windows | calcula linhas | 1 |
 
 > Por que o José roda 2 processos? O master só distribui e monta a imagem,
 > não calcula. Rodando também 1 processo de cálculo no notebook dele, as
@@ -72,7 +72,7 @@ mpirun -np 4 ./mandelbrot_mpi
 Tem que aparecer "Imagem gravada em saida.ppm". Se isso falhar, o problema
 é o programa/instalação, não a rede.
 
-### 1.2 Configurar o WSL (José e Diego — o Lab NÃO precisa)
+### 1.2 Configurar o WSL (José e Diego; e o Lab **só se** for Windows com WSL)
 
 No **Windows** (não no Ubuntu):
 
@@ -125,9 +125,16 @@ O IP do Wi-Fi tem que ser **o mesmo** nos dois. Se for diferente
 
 ## 3. No dia: o que fazer em CADA computador
 
-### 3.1 No PC do LAB (Ubuntu)
+### 3.1 No PC do LAB
 
-Você só precisa deixar o SSH ligado e dar o IP e o usuário para o José.
+Descubra como o PC roda Linux: se ao abrir o terminal ele já é **Ubuntu/Linux
+puro**, siga a **Opção A**. Se o PC é **Windows** e o Linux é o terminal
+"Ubuntu" (WSL), siga a **Opção B**.
+
+Em ambos os casos você só precisa deixar o SSH ligado e dar o IP e o usuário
+para o José.
+
+#### Opção A — Lab com Linux nativo (Ubuntu)
 
 ```sh
 sudo service ssh start || sudo systemctl start ssh
@@ -137,6 +144,35 @@ whoami                   # anote
 ```
 
 ✅ **Conferir:** `sudo service ssh status` mostra "active (running)".
+
+Se **não tiver a senha do sudo**, não dá para instalar nada: peça ao
+técnico para instalar `build-essential openmpi-bin libopenmpi-dev
+openssh-server` e confira com `which mpicc mpirun sshd`.
+
+#### Opção B — Lab com Windows + WSL
+
+Faça no PC do Lab o mesmo que o Diego (seção 3.2): o passo 1.2 completo
+(`.wslconfig` com `networkingMode=mirrored`, firewall do Hyper-V como
+administrador, `wsl --shutdown`) e depois, no Ubuntu:
+
+```sh
+sudo service ssh start   # PRECISA ser refeito toda vez que o WSL reiniciar
+hostname -I              # deve ser igual ao IP do Wi-Fi/cabo no ipconfig
+whoami                   # anote
+```
+
+Também libere a porta 22 no firewall do Windows (PowerShell como
+administrador):
+
+```powershell
+New-NetFirewallRule -DisplayName "WSL SSH" -Direction Inbound -Protocol TCP -LocalPort 22 -Action Allow
+```
+
+✅ **Conferir:** `sudo service ssh status` mostra que está rodando e o
+`hostname -I` bate com o `ipconfig` do Windows.
+
+> Em PC de laboratório com Windows, o WSL pode estar bloqueado ou sem
+> permissão de administrador. Se não der para configurar, veja o Plano B.
 
 Pronto. Daqui para frente o Lab **não faz mais nada**. Só não desligue,
 não bloqueie a sessão e não feche a rede.
