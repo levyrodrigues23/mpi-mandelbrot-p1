@@ -20,6 +20,10 @@
  * pontos "fora" escapam rapido) -- uma divisao estatica (ex.: 1/3 fixo
  * da imagem para cada maquina) correria o risco de sobrecarregar uma
  * maquina enquanto as outras ficam ociosas.
+ *
+ * Cada escravo informa ao mestre o nome do computador onde esta rodando,
+ * e todas as mensagens mostram esse nome (prova de que cada computador
+ * participou).
  */
 
 #define IMG_WIDTH   800
@@ -34,7 +38,11 @@
 
 #define TAG_TAREFA     110
 #define TAG_RESULTADO  111
+#define TAG_NOME       112
 #define END            -1
+
+/* Nome do computador do escravo de rank r (guardado no vetor "nomes"). */
+#define NOME(r) (nomes + (size_t) (r) * MPI_MAX_PROCESSOR_NAME)
 
 /* Uma "tarefa" concluida: o indice da linha + os bytes RGB da linha
    inteira. Tamanho fixo (sabemos IMG_WIDTH em tempo de compilacao), o
@@ -84,7 +92,8 @@ static void salvar_ppm(const char *nome_arquivo, unsigned char *imagem,
 static void mestre(void)
 {
     int tarefa = 0;
-    int nb_escravos;
+    int nb_escravos, i;
+    char *nomes;
     unsigned char *imagem;
     LinhaResultado resultado;
     MPI_Status stat;
@@ -92,15 +101,24 @@ static void mestre(void)
     MPI_Comm_size(MPI_COMM_WORLD, &nb_escravos);
     nb_escravos--;
 
+    /* Cada escravo se apresenta com o nome do computador onde roda, para
+       as mensagens mostrarem em qual maquina de verdade cada linha foi. */
+    nomes = malloc((size_t) (nb_escravos + 1) * MPI_MAX_PROCESSOR_NAME);
     imagem = malloc((size_t) IMG_WIDTH * IMG_HEIGHT * 3);
-    if (imagem == NULL) {
-        fprintf(stderr, "Erro ao alocar buffer da imagem\n");
+    if (nomes == NULL || imagem == NULL) {
+        fprintf(stderr, "Erro ao alocar memoria\n");
         MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+    for (i = 1; i <= nb_escravos; i++) {
+        MPI_Recv(NOME(i), MPI_MAX_PROCESSOR_NAME, MPI_CHAR, i, TAG_NOME,
+                 MPI_COMM_WORLD, &stat);
+        printf("Maquina %d esta no computador \"%s\"\n", i, NOME(i));
     }
 
     /* Primeiro, manda uma linha para cada maquina escrava. */
     for (tarefa = 0; tarefa < nb_escravos && tarefa < IMG_HEIGHT; tarefa++) {
-        printf("Mestre manda linha %d para a maquina %d\n", tarefa, tarefa + 1);
+        printf("Mestre manda linha %d para a maquina %d (%s)\n",
+               tarefa, tarefa + 1, NOME(tarefa + 1));
         MPI_Send(&tarefa, 1, MPI_INT, tarefa + 1, TAG_TAREFA, MPI_COMM_WORLD);
     }
 
@@ -111,8 +129,8 @@ static void mestre(void)
                  TAG_RESULTADO, MPI_COMM_WORLD, &stat);
         memcpy(&imagem[(size_t) resultado.linha * IMG_WIDTH * 3],
                resultado.pixels, IMG_WIDTH * 3);
-        printf("Mestre recebeu linha %d da maquina %d; manda linha %d\n",
-               resultado.linha, stat.MPI_SOURCE, tarefa);
+        printf("Mestre recebeu linha %d da maquina %d (%s); manda linha %d\n",
+               resultado.linha, stat.MPI_SOURCE, NOME(stat.MPI_SOURCE), tarefa);
         MPI_Send(&tarefa, 1, MPI_INT, stat.MPI_SOURCE, TAG_TAREFA, MPI_COMM_WORLD);
         tarefa++;
     }
@@ -124,38 +142,44 @@ static void mestre(void)
                  TAG_RESULTADO, MPI_COMM_WORLD, &stat);
         memcpy(&imagem[(size_t) resultado.linha * IMG_WIDTH * 3],
                resultado.pixels, IMG_WIDTH * 3);
-        printf("Mestre recebeu linha %d da maquina %d (ultima); mandando fim\n",
-               resultado.linha, stat.MPI_SOURCE);
+        printf("Mestre recebeu linha %d da maquina %d (%s) (ultima); mandando fim\n",
+               resultado.linha, stat.MPI_SOURCE, NOME(stat.MPI_SOURCE));
         MPI_Send(&sinal, 1, MPI_INT, stat.MPI_SOURCE, TAG_TAREFA, MPI_COMM_WORLD);
     }
 
     salvar_ppm("saida.ppm", imagem, IMG_WIDTH, IMG_HEIGHT);
     free(imagem);
+    free(nomes);
 }
 
-/* Escravo (uma das "maquinas"): recebe o indice de uma linha, calcula, e
-   manda o resultado de volta; repete ate receber o sinal de fim (END).
+/* Escravo (uma das "maquinas"): informa o nome do computador, depois
+   recebe o indice de uma linha, calcula, e manda o resultado de volta;
+   repete ate receber o sinal de fim (END).
    Adaptado diretamente de escravo() em mestre_escravo_exemplo.c. */
 static void escravo(void)
 {
     int tarefa = 0;
-    int rank;
+    int rank, tam_nome;
+    char nome[MPI_MAX_PROCESSOR_NAME];
     LinhaResultado resultado;
     MPI_Status stat;
 
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    memset(nome, 0, sizeof(nome));
+    MPI_Get_processor_name(nome, &tam_nome);
+    MPI_Send(nome, MPI_MAX_PROCESSOR_NAME, MPI_CHAR, 0, TAG_NOME, MPI_COMM_WORLD);
 
     while (1) {
         MPI_Recv(&tarefa, 1, MPI_INT, 0, TAG_TAREFA, MPI_COMM_WORLD, &stat);
         if (tarefa == END) {
             break;
         }
-        printf("Maquina %d: calculando linha %d\n", rank, tarefa);
+        printf("Maquina %d (%s): calculando linha %d\n", rank, nome, tarefa);
         calcula_linha(tarefa, resultado.pixels);
         resultado.linha = tarefa;
         MPI_Send(&resultado, sizeof(LinhaResultado), MPI_BYTE, 0, TAG_RESULTADO, MPI_COMM_WORLD);
     }
-    printf("Maquina %d terminando...\n", rank);
+    printf("Maquina %d (%s) terminando...\n", rank, nome);
 }
 
 int main(int argc, char *argv[])

@@ -59,8 +59,12 @@ se já existir, **não** sobrescreva.)
 cd ~/mpi-mandelbrot-p1
 ./verificar.sh        # diz o que falta; só siga quando não tiver [FALHOU]
 ./rodar.sh            # roda; imagem em codigo_fonte/saida.ppm
-./rodar.sh --quem     # mostra o nome de cada máquina (prova que o Diego trabalhou)
+./rodar.sh --quem     # só lista o nome de cada máquina participante
 ```
+
+Na execução, cada linha mostra o **nome do computador** que a calculou, ex.:
+`Maquina 2 (nome-do-diego): calculando linha 7`. As primeiras linhas
+(`Maquina N esta no computador "..."`) listam quem participa.
 
 ## Deu erro?
 
