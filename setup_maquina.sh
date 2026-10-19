@@ -1,27 +1,35 @@
-#!/bin/sh
-# Instala tudo que cada uma das 3 maquinas precisa para compilar e rodar o
-# programa MPI (mandelbrot_mpi) e para o mestre conseguir se conectar nas
-# outras via SSH: openmpi (mpicc/mpirun), servidor SSH, e um compilador
-# C++ para a versao serial de comparacao (ja costuma vir instalado).
-#
-# Rode isto nas 3 maquinas (seu notebook/WSL, notebook do Diego/WSL, e o
-# PC do laboratorio). Precisa de sudo.
+#!/bin/bash
+# Prepara UMA maquina (rode em cada uma: mestre, escrava, lab).
+# Instala OpenMPI + SSH, compila o programa e aplica o conserto do hwloc.
+# Precisa de sudo (pede a senha desta maquina).
 
 set -e
+DIR="$(cd "$(dirname "$0")" && pwd)"
 
-echo "Atualizando lista de pacotes..."
+echo "[1/4] Instalando openmpi, ssh e ferramentas de build..."
 sudo apt-get update
-
-echo "Instalando openmpi, ssh e ferramentas de build..."
 sudo apt-get install -y build-essential openmpi-bin libopenmpi-dev openssh-server
 
-echo "Garantindo que o servico SSH esta rodando..."
+echo "[2/4] Ligando o servidor SSH..."
 sudo service ssh start || sudo systemctl start ssh || true
 
+# Sem esta linha o mpirun trava para sempre no WSL (o hwloc fica tentando
+# falar com um servidor grafico X11 que nao responde). Tem que ficar no
+# INICIO do ~/.bashrc, antes da parte "se nao for interativo, sai", senao
+# o ssh (que e' nao interativo) nao enxerga.
+echo "[3/4] Aplicando o conserto do hwloc no ~/.bashrc..."
+if ! grep -q 'HWLOC_COMPONENTS=-gl' ~/.bashrc 2>/dev/null; then
+    { echo 'export HWLOC_COMPONENTS=-gl   # evita o mpirun travar (setup_maquina.sh)'; cat ~/.bashrc 2>/dev/null; } > ~/.bashrc.novo
+    mv ~/.bashrc.novo ~/.bashrc
+fi
+
+echo "[4/4] Compilando..."
+make -C "$DIR/codigo_fonte" mpi
+
+IP=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i <= NF; i++) if ($i == "src") { print $(i + 1); exit }}')
 echo
-echo "Pronto. Para permitir que o mestre (mpirun) faca login sem senha"
-echo "nesta maquina, cole a chave publica do mestre em:"
-echo "  ~/.ssh/authorized_keys"
+echo "PRONTO. Anote para o mestre:"
+echo "  IP:      ${IP:-"(sem rede ainda)"}"
+echo "  usuario: $(whoami)"
 echo
-echo "IP desta maquina na rede local:"
-hostname -I
+echo "IMPORTANTE: feche este terminal e abra de novo (para valer o ~/.bashrc)."

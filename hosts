@@ -1,10 +1,12 @@
-# Hostfile do OpenMPI: quais maquinas participam e quantos processos
-# ("slots") cada uma roda.
+# Quais maquinas participam e quantos processos ("slots") cada uma roda.
+# O ./rodar.sh soma os slots sozinho para decidir quantos processos abrir.
 #
-# localhost = notebook do Jose (mestre + 1 escravo)
-# diego e lab = apelidos definidos em ~/.ssh/config no notebook do Jose
-# (ver README, passo 3)
+# localhost = o mestre (notebook do Jose): roda o mestre + 1 escravo.
+# diego e lab = apelidos do ~/.ssh/config do mestre (ver README, passo 3).
+#
+# Para 2 maquinas (Jose + Diego): deixe o lab comentado (com #).
+# Para 3 maquinas: tire o # da linha do lab.
 
 localhost slots=2
 diego slots=1
-lab slots=1
+# lab slots=1

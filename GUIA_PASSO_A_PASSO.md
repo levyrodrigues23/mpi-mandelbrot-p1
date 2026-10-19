@@ -1,223 +1,106 @@
-# Guia passo a passo — Mandelbrot MPI em 3 máquinas
+# Guia passo a passo — Mandelbrot MPI em 2 ou 3 máquinas
 
-Este guia diz **o que fazer em cada computador**, em ordem, com a forma de
-conferir se cada passo deu certo. Siga na ordem e só avance quando o
-"✅ Conferir" do passo funcionar.
+Siga na ordem. Só avance quando o **✅ Conferir** do passo funcionar.
 
-## 0. Visão geral
+## Visão geral
 
-**O que a prova pede:** 3 máquinas processando com MPI, cada uma calculando
-uma parte da imagem, e o *master* juntando tudo na figura completa.
-
-**Como o nosso programa faz isso:** o master manda uma linha da imagem de
-cada vez para quem estiver livre; cada máquina calcula a linha e devolve; o
-master monta a imagem e grava `saida.ppm`.
-
-| Máquina | Sistema | Papel | Processos |
+| Máquina | Papel | Processos | Roda `rodar.sh`? |
 |---|---|---|---|
-| **José** (notebook) | WSL | **MASTER** (organiza e monta a imagem) + calcula | 2 (o master e 1 que calcula) |
-| **Diego** (notebook) | WSL | calcula linhas | 1 |
-| **Lab** (PC) | Ubuntu (Linux nativo) **ou** WSL no Windows | calcula linhas | 1 |
+| **José** (notebook) | **MESTRE** (monta a imagem) + calcula | 2 | **Sim, só ele** |
+| **Diego** (notebook) | calcula | 1 | Não |
+| **Lab** (PC, opcional) | calcula | 1 | Não |
 
-> Por que o José roda 2 processos? O master só distribui e monta a imagem,
-> não calcula. Rodando também 1 processo de cálculo no notebook dele, as
-> **3 máquinas calculam**, como a prova pede.
+O mestre só distribui e monta a imagem, por isso o José roda 2 processos:
+assim as 2 (ou 3) máquinas calculam. Cada máquina pode ser **Linux nativo**
+ou **WSL no Windows**; o passo 2 tem uma opção para cada caso.
 
-Só **o José** executa o `mpirun`. O Diego e o Lab só deixam a máquina
-pronta (instalada, compilada, com SSH ligado) e **não rodam nada** na hora
-da execução.
-
-### Termos que aparecem
-
-- **IP:** o "endereço" da máquina na rede (ex.: `192.168.0.15`).
-- **SSH:** forma de uma máquina entrar na outra pelo terminal. O `mpirun`
-  usa SSH para iniciar o programa nas outras máquinas.
-- **WSL:** o Linux dentro do Windows (o terminal "Ubuntu").
-- **WSL "mirrored":** configuração para o WSL usar o **mesmo IP do
-  Windows**. Sem isso, o WSL fica escondido atrás do Windows e as outras
-  máquinas não conseguem chegar nele.
+> **O que travava antes:** o `mpirun` ficava parado para sempre no WSL (até
+> no teste local). Já está resolvido no `rodar.sh` e no `setup_maquina.sh`.
+> Detalhes no README.
 
 ---
 
-## 1. Antes do dia (faça em casa, com internet)
-
-Isto evita perder tempo na hora. Faça nas **3 máquinas**.
-
-### 1.1 Preparar o programa (Diego, José e Lab)
-
-Abra o terminal (Ubuntu / WSL) e rode:
+## Passo 1 — Em CADA máquina (com internet, pode ser em casa)
 
 ```sh
 cd ~
 git clone https://github.com/levyrodrigues23/mpi-mandelbrot-p1.git
 cd mpi-mandelbrot-p1
-bash setup_maquina.sh      # pede a senha do sudo, demora alguns minutos
-cd codigo_fonte
-make mpi
+bash setup_maquina.sh        # pede a senha do sudo; leva alguns minutos
 ```
 
-> **Importante:** tem que ser em `~` (pasta pessoal) nas três, para o
-> caminho ser **o mesmo** em todas: `~/mpi-mandelbrot-p1`.
+Se já tinha clonado antes: `cd ~/mpi-mandelbrot-p1 && git fetch && git reset --hard origin/master`
+e rode o `setup_maquina.sh` de novo.
 
-✅ **Conferir:** rode `ls ~/mpi-mandelbrot-p1/codigo_fonte/mandelbrot_mpi`.
-Tem que mostrar o arquivo, sem erro.
+Ao terminar, ele mostra **o IP e o usuário** da máquina: anote. Depois
+**feche e abra o terminal** (para valer o `~/.bashrc`).
 
-✅ **Conferir o teste local (só no José):**
+> Tem que ser em `~` nas máquinas, para o caminho ser `~/mpi-mandelbrot-p1`
+> em todas.
+
+✅ **Conferir (no mestre):** `cd ~/mpi-mandelbrot-p1 && ./rodar.sh --local`
+tem que terminar em ~5 s com `OK! Imagem do mestre...`. Se isso falhar, o
+problema é a instalação, não a rede.
+
+---
+
+## Passo 2 — Deixar a máquina acessível pela rede
+
+Todas as máquinas na **mesma rede** (Wi-Fi ou cabo). Se o Wi-Fi da
+universidade não deixar as máquinas se enxergarem, use o **hotspot do
+celular** (Plano B).
+
+### Opção A — Linux nativo (ex.: PC do lab)
 
 ```sh
-cd ~/mpi-mandelbrot-p1/codigo_fonte
-mpirun -np 4 ./mandelbrot_mpi
+sudo systemctl enable --now ssh        # ou: sudo service ssh start
+sudo ufw status                        # se "active": sudo ufw allow from 192.168.0.0/24
 ```
 
-Tem que aparecer "Imagem gravada em saida.ppm". Se isso falhar, o problema
-é o programa/instalação, não a rede.
+Sem senha do sudo? Peça ao técnico para instalar
+`build-essential openmpi-bin libopenmpi-dev openssh-server`
+e depois rode só `cd ~/mpi-mandelbrot-p1/codigo_fonte && make mpi`.
 
-### 1.2 Configurar o WSL (José e Diego; e o Lab **só se** for Windows com WSL)
+### Opção B — WSL no Windows (ex.: notebooks)
 
-No **Windows** (não no Ubuntu):
-
-1. Confira a versão: abra o PowerShell e rode `wsl --version`. Precisa de
-   WSL 2.0 ou mais novo e Windows 11. Se der erro, rode `wsl --update`.
-2. Crie o arquivo `C:\Users\SEU_USUARIO\.wslconfig` (bloco de notas) com
-   exatamente isto:
+1. No Windows, crie `C:\Users\SEU_USUARIO\.wslconfig` com:
    ```
    [wsl2]
    networkingMode=mirrored
    ```
-   (cuidado para o bloco de notas não salvar como `.wslconfig.txt`)
-3. Abra o **PowerShell como administrador** e rode:
+   (cuidado para o Bloco de Notas não salvar como `.wslconfig.txt`)
+2. PowerShell **como administrador**:
    ```powershell
    Set-NetFirewallHyperVVMSetting -Name '{40E0AC32-46A5-438A-A0B2-2B479E8F2E90}' -DefaultInboundAction Allow
+   New-NetFirewallRule -DisplayName "WSL SSH" -Direction Inbound -Protocol TCP -LocalPort 22 -Action Allow
    ```
-4. No PowerShell, rode `wsl --shutdown` e abra o Ubuntu de novo.
+3. No PowerShell: `wsl --shutdown`. Abra o Ubuntu de novo.
+4. No Ubuntu: `sudo service ssh start`
+   (**refazer toda vez que o WSL reiniciar**).
 
-✅ **Conferir:** no Ubuntu rode `hostname -I`; no PowerShell rode `ipconfig`.
-O IP do Wi-Fi tem que ser **o mesmo** nos dois. Se for diferente
-(`172.x.x.x`), o modo mirrored não pegou: refaça o passo 2 e o 4.
+✅ **Conferir:** `hostname -I` no Ubuntu mostra o **mesmo IP** do Wi-Fi no
+`ipconfig` do Windows. Se aparecer `172.x.x.x`, o mirrored não pegou:
+refaça os passos 1 a 3 (precisa de Windows 11 e `wsl --update`).
 
 ---
 
-## 2. No dia: rede
+## Passo 3 — No mestre (José): SSH sem senha
 
-1. As **3 máquinas** conectam na **mesma rede** (Wi-Fi ou cabo).
-2. Em **cada máquina**, no Ubuntu, rode e **anote**:
-   ```sh
-   hostname -I      # o IP
-   whoami           # o nome de usuário
-   ```
-3. Preencha esta tabela (o José precisa dela):
+O `mpirun` entra nas outras máquinas por SSH, então isso não pode pedir senha.
 
-   | Máquina | IP | Usuário |
-   |---|---|---|
-   | José | | |
-   | Diego | | |
-   | Lab | | |
-
-4. Os 3 primeiros números dos IPs devem ser **iguais** (ex.:
-   `192.168.0.x`). Se forem diferentes (ex.: Lab no cabo em
-   `10.x.x.x` e os notebooks no Wi-Fi em `192.168.x.x`), as máquinas estão
-   em redes separadas e podem não se enxergar → veja "Problemas".
-
-> O PC do Lab pode estar no **cabo** sem problema, desde que esteja na
-> mesma rede dos notebooks.
-
----
-
-## 3. No dia: o que fazer em CADA computador
-
-### 3.1 No PC do LAB
-
-Descubra como o PC roda Linux: se ao abrir o terminal ele já é **Ubuntu/Linux
-puro**, siga a **Opção A**. Se o PC é **Windows** e o Linux é o terminal
-"Ubuntu" (WSL), siga a **Opção B**.
-
-Em ambos os casos você só precisa deixar o SSH ligado e dar o IP e o usuário
-para o José.
-
-#### Opção A — Lab com Linux nativo (Ubuntu)
-
+**a) Chave SSH.** Só se ainda **não existir** (`ls ~/.ssh/id_ed25519`):
 ```sh
-sudo service ssh start || sudo systemctl start ssh
-sudo ufw status          # se disser "active", rode: sudo ufw allow 22
-hostname -I              # anote
-whoami                   # anote
+ssh-keygen          # Enter em tudo
 ```
+⚠️ Se já existir, **não** responda `y` para sobrescrever.
 
-✅ **Conferir:** `sudo service ssh status` mostra "active (running)".
-
-Se **não tiver a senha do sudo**, não dá para instalar nada: peça ao
-técnico para instalar `build-essential openmpi-bin libopenmpi-dev
-openssh-server` e confira com `which mpicc mpirun sshd`.
-
-#### Opção B — Lab com Windows + WSL
-
-Faça no PC do Lab o mesmo que o Diego (seção 3.2): o passo 1.2 completo
-(`.wslconfig` com `networkingMode=mirrored`, firewall do Hyper-V como
-administrador, `wsl --shutdown`) e depois, no Ubuntu:
-
-```sh
-sudo service ssh start   # PRECISA ser refeito toda vez que o WSL reiniciar
-hostname -I              # deve ser igual ao IP do Wi-Fi/cabo no ipconfig
-whoami                   # anote
-```
-
-Também libere a porta 22 no firewall do Windows (PowerShell como
-administrador):
-
-```powershell
-New-NetFirewallRule -DisplayName "WSL SSH" -Direction Inbound -Protocol TCP -LocalPort 22 -Action Allow
-```
-
-✅ **Conferir:** `sudo service ssh status` mostra que está rodando e o
-`hostname -I` bate com o `ipconfig` do Windows.
-
-> Em PC de laboratório com Windows, o WSL pode estar bloqueado ou sem
-> permissão de administrador. Se não der para configurar, veja o Plano B.
-
-Pronto. Daqui para frente o Lab **não faz mais nada**. Só não desligue,
-não bloqueie a sessão e não feche a rede.
-
-### 3.2 No notebook do DIEGO (WSL)
-
-```sh
-sudo service ssh start   # PRECISA ser refeito toda vez que o WSL reiniciar
-hostname -I              # deve ser igual ao IP do Wi-Fi no ipconfig
-whoami                   # anote
-```
-
-✅ **Conferir:** `sudo service ssh status` mostra que está rodando e o
-`hostname -I` bate com o `ipconfig` do Windows.
-
-Pronto. O Diego **não faz mais nada**. Deixe o Ubuntu aberto.
-
-### 3.3 No notebook do JOSÉ (MASTER) — o passo mais longo
-
-**a) Garantir o modo mirrored** (feito no passo 1.2): `hostname -I` igual ao
-`ipconfig`.
-
-**b) Criar a chave SSH (só na primeira vez):**
-
-```sh
-ssh-keygen          # aperte Enter em tudo
-```
-
-**c) Autorizar a entrada nas outras máquinas sem senha.** Troque pelos IPs
-e usuários da tabela. Vai pedir a senha de cada máquina **uma vez**, e
-na primeira vez pergunta "Are you sure...": digite `yes`.
-
+**b) Mandar a chave para cada máquina** (pede a senha dela uma vez; se
+perguntar "Are you sure", digite `yes`):
 ```sh
 ssh-copy-id USUARIO_DO_DIEGO@IP_DO_DIEGO
-ssh-copy-id USUARIO_DO_LAB@IP_DO_LAB
 ```
 
-**d) Criar apelidos.** Abra o arquivo `~/.ssh/config`:
-
-```sh
-nano ~/.ssh/config
-```
-
-e cole (trocando pelos valores da tabela):
-
+**c) Apelidos.** Edite `nano ~/.ssh/config` (Ctrl+O, Enter, Ctrl+X):
 ```
 Host diego
     HostName IP_DO_DIEGO
@@ -227,111 +110,75 @@ Host lab
     HostName IP_DO_LAB
     User USUARIO_DO_LAB
 ```
+Os apelidos têm que ser **`diego`** e **`lab`** (o arquivo `hosts` usa
+esses nomes). **O IP muda quando muda a rede**: confira e atualize aqui.
 
-Salve com `Ctrl+O`, `Enter`, e saia com `Ctrl+X`.
-
-> O arquivo `hosts` do repositório já usa os apelidos `diego` e `lab`.
-> Por isso os apelidos **têm que ter exatamente esses nomes**.
-
-**e) Testar o SSH. Os dois têm que responder `ok` sem pedir senha:**
-
-```sh
-ssh diego echo ok
-ssh lab echo ok
-```
-
-🛑 **Só continue quando os dois funcionarem.** Se pedir senha ou travar,
-veja "Problemas".
-
-**f) Testar se o programa existe nas outras máquinas:**
-
-```sh
-ssh diego ls mpi-mandelbrot-p1/codigo_fonte/mandelbrot_mpi
-ssh lab ls mpi-mandelbrot-p1/codigo_fonte/mandelbrot_mpi
-```
-
-Os dois têm que mostrar o nome do arquivo.
-
-**g) Rodar** (**a partir de `~`**):
-
-```sh
-cd ~
-mpirun --hostfile mpi-mandelbrot-p1/hosts -np 4 mpi-mandelbrot-p1/codigo_fonte/mandelbrot_mpi
-```
-
-✅ **Conferir:** o terminal mostra "Mestre manda linha X para a maquina Y"
-com Y variando entre 1, 2 e 3, e no fim "Imagem gravada em saida.ppm". A
-imagem fica em `~/saida.ppm`.
-
-**h) Ver a imagem:**
-
-```sh
-sudo apt-get install -y imagemagick   # só na primeira vez (faça em casa)
-cd ~
-convert saida.ppm saida.png
-explorer.exe saida.png
-```
+✅ **Conferir:** `ssh diego echo ok` responde `ok` **sem pedir senha**.
 
 ---
 
-## 4. Como provar que as 3 máquinas trabalharam
+## Passo 4 — Rodar (só no mestre)
 
-Para mostrar ao professor que as 3 participaram, confira as mensagens do
-terminal: cada linha "Maquina N: calculando linha X" vem de um processo.
-Para ver **em qual computador** cada processo rodou, rode:
+1. Em `~/mpi-mandelbrot-p1/hosts`, deixe só as máquinas que vão participar
+   (o `lab` já vem comentado com `#`; tire o `#` se for usar):
+   ```
+   localhost slots=2
+   diego slots=1
+   # lab slots=1
+   ```
+2. Conferir tudo de uma vez (diz o que falta e como consertar):
+   ```sh
+   cd ~/mpi-mandelbrot-p1
+   ./verificar.sh
+   ```
+3. Rodar:
+   ```sh
+   ./rodar.sh
+   ```
 
-```sh
-cd ~
-mpirun --hostfile mpi-mandelbrot-p1/hosts -np 4 hostname
-```
+✅ **Conferir:** aparecem linhas "Mestre manda linha X para a maquina Y" com
+Y variando (1, 2, 3), e no fim `OK! Imagem do mestre: .../saida.ppm`.
 
-Tem que imprimir 2 vezes o nome do notebook do José, 1 vez o do Diego e 1
-vez o do Lab.
+**Provar que cada máquina trabalhou:** `./rodar.sh --quem` imprime o nome
+da máquina de cada processo: o do José 2 vezes e o dos outros 1 vez cada.
+
+**Ver a imagem:** `convert codigo_fonte/saida.ppm saida.png && explorer.exe saida.png`
+(`sudo apt-get install imagemagick` na primeira vez).
 
 ---
 
-## 5. Problemas comuns
+## Se der errado
+
+Primeiro rode `./verificar.sh`: ele aponta o problema.
 
 | Sintoma | Causa provável | O que fazer |
 |---|---|---|
-| `ssh ...` pede senha no `mpirun` | `ssh-copy-id` não funcionou | Refazer o 3.3 (c) e testar o (e) |
-| `ssh ...` fica travado / "Connection timed out" | Rede isolando clientes, firewall, ou SSH desligado | Conferir `ping IP`; ligar o SSH (3.1/3.2); ver se os IPs estão na mesma faixa |
-| `ping` não funciona entre as máquinas | Rede com "isolamento de clientes" (comum em Wi-Fi institucional) | Usar um roteador próprio ou o **hotspot de um celular** para as 3 máquinas |
-| `ssh` funciona mas o `mpirun` trava sem sair | Firewall bloqueando a volta (o Lab/Diego não conseguem conectar no José) | Refazer o firewall do Hyper-V no José (1.2 passo 3) e conferir que o IP do WSL é o do Wi-Fi |
-| `No such file or directory` ao rodar | Programa não está no mesmo caminho em todas | Conferir que está em `~/mpi-mandelbrot-p1` e que rodou `make mpi` em cada uma |
-| `hostname -I` mostra `172.x.x.x` no WSL | Modo mirrored não ativou | Refazer 1.2 (confira `.wslconfig` e rode `wsl --shutdown`) |
-| `Connection refused` | SSH não está rodando | `sudo service ssh start` na máquina em questão |
-| O SSH não conecta no Diego depois de reiniciar o WSL | O SSH não sobe sozinho no WSL | `sudo service ssh start` de novo |
-| Erro de versão / "incompatible" do MPI | OpenMPI diferente entre as máquinas | Rodar `mpirun --version` nas 3 e comparar; reinstalar na que estiver diferente |
-| `mpirun` escolhe uma interface errada e trava | Existem várias placas de rede | Tentar `mpirun --mca btl_tcp_if_include wlan0 ...` (troque pelo nome da interface que aparece em `ip a`) |
+| `mpirun` **trava sem mostrar nada** | hwloc sem conserto | `bash setup_maquina.sh` e **reabrir o terminal** (em todas as máquinas) |
+| `Permission denied` / pede senha | `ssh-copy-id` não funcionou | Refazer o passo 3b; testar `ssh diego echo ok` |
+| `Connection timed out` / `refused` | SSH desligado, IP errado, rede isolada | `sudo service ssh start` na outra máquina; conferir IP no `~/.ssh/config`; testar `ping IP` |
+| `ping` não funciona entre as máquinas | Wi-Fi isola os clientes | Usar o hotspot do celular nas máquinas |
+| `ssh` funciona mas o `mpirun` trava depois | Firewall bloqueando a volta | WSL: refazer o passo 2B(2). Windows sem WSL mirrored: liberar o firewall da rede privada temporariamente |
+| `No such file or directory` | Programa não está em `~/mpi-mandelbrot-p1` ou sem `make mpi` | Refazer o passo 1 nessa máquina |
+| `diego` ou `lab` "could not resolve" | Falta o apelido no `~/.ssh/config` | Passo 3c |
+| Erro de versão do MPI | OpenMPI diferente | `mpirun --version` em todas e comparar |
+| Diego sumiu depois de reiniciar o WSL | SSH não sobe sozinho | `sudo service ssh start` |
 
----
+## Plano B (se a rede não cooperar)
 
-## 6. Plano B (se a rede não cooperar)
+1. **Hotspot do celular**: conecte as máquinas nele, confira os IPs
+   novos (passo 1) e atualize o `~/.ssh/config` do mestre.
+2. **Só se não houver outro jeito:** mostrar em uma máquina (`./rodar.sh --local`)
+   e explicar que a execução em várias máquinas depende só da rede.
 
-Em ordem de preferência:
+## Checklist
 
-1. **Hotspot do celular:** conecte as 3 máquinas nele (o celular vira o
-   "roteador"). Refaça a seção 2 porque os IPs mudam, e atualize o
-   `~/.ssh/config` do José.
-2. **Mostrar a versão funcionando em uma máquina só**, simulando as 3
-   (`mpirun -np 4 ./mandelbrot_mpi`) e explicar que a execução em 3
-   máquinas depende só da rede. **Só use isso se não houver outro jeito**,
-   pois a prova pede as 3 máquinas de verdade.
-
----
-
-## 7. Checklist rápido
-
-**Antes (em casa):**
-- [ ] Clone, `setup_maquina.sh` e `make mpi` nas 3 máquinas
-- [ ] `.wslconfig` + firewall + `wsl --shutdown` no José e no Diego
-- [ ] Teste local no José (`mpirun -np 4 ./mandelbrot_mpi`)
+**Em casa:**
+- [ ] Clone + `bash setup_maquina.sh` em cada máquina (terminal reaberto)
+- [ ] `.wslconfig` + firewall + `wsl --shutdown` nos notebooks com WSL
+- [ ] No mestre: `./rodar.sh --local` deu `OK!`
 
 **No dia:**
-- [ ] 3 máquinas na mesma rede, IPs na mesma faixa
-- [ ] IP e usuário de cada uma anotados
-- [ ] Lab: SSH ligado
-- [ ] Diego: `sudo service ssh start`
-- [ ] José: `ssh-copy-id`, `~/.ssh/config`, `ssh diego echo ok`, `ssh lab echo ok`
-- [ ] José: `mpirun --hostfile ... -np 4 ...` e a imagem em `~/saida.ppm`
+- [ ] Mesma rede; IP e usuário de cada máquina anotados
+- [ ] `sudo service ssh start` em todas
+- [ ] Mestre: `ssh-copy-id`, `~/.ssh/config` com os IPs de hoje, `ssh diego echo ok`
+- [ ] Mestre: `./verificar.sh` sem `[FALHOU]`, depois `./rodar.sh`

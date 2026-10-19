@@ -1,186 +1,56 @@
 # P1 — Mandelbrot distribuído com MPI
 
-Disciplina Sistemas Distribuídos (UFC, Campus Itapajé, Prof. Dr. Julio Anjos).
+Sistemas Distribuídos (UFC, Campus Itapajé, Prof. Dr. Julio Anjos).
 Autores: José Levy Rodrigues da Silva e Diego Silva Nascimento.
 
-Gera o conjunto de Mandelbrot dividindo o cálculo entre **3 máquinas**
-(uma linha da imagem por tarefa, distribuída dinamicamente pelo mestre),
-seguindo o padrão mestre/escravo fornecido pelo professor
-(`codigo_fonte/mestre_escravo_exemplo.c`). O mestre recebe as linhas
-calculadas, monta a imagem completa e grava `saida.ppm`.
+Gera o conjunto de Mandelbrot dividindo o cálculo entre várias máquinas no
+padrão **mestre/escravo** do professor: o mestre (rank 0) manda uma linha da
+imagem de cada vez para quem estiver livre, as outras máquinas calculam e
+devolvem, e o mestre monta a imagem completa em `saida.ppm`.
 
-## Arquivos
+> **Para rodar em 2 ou 3 máquinas, siga o [GUIA_PASSO_A_PASSO.md](GUIA_PASSO_A_PASSO.md)**
+> (também em PDF).
 
-- `codigo_fonte/mandelbrot.cpp` + `Mandel.h`/`Palette.h,.cpp`/`Color.h`/`X11Display.h,.cpp`:
-  programa **serial original** (C++, janela X11), fornecido pelo
-  professor, intocado — baseline de comparação no relatório.
-- `codigo_fonte/mandelbrot_calc.h,.c`: as mesmas fórmulas do fractal e da
-  cor, portadas para **C puro** (sem `std::complex`/classes).
-- `codigo_fonte/mandelbrot_mpi.c`: o programa **distribuído** (C puro,
-  MPI), a entrega da P1.
-- `codigo_fonte/mestre_escravo_exemplo.c`: exemplo de referência do
-  professor (mantido como veio).
-- `setup_maquina.sh`: instala as dependências (`openmpi-bin`,
-  `libopenmpi-dev`, `openssh-server`) em cada uma das 3 máquinas.
-- `hosts`: hostfile do MPI (quais máquinas participam e quantos processos
-  cada uma roda).
-
-## Compilar
-
-Dentro de `codigo_fonte/`:
-
-```sh
-make mpi        # gera o executável mandelbrot_mpi (versão distribuída)
-make serial     # gera o executável mandelbrot (versão serial, com X11;
-                # precisa de: sudo apt-get install libx11-dev)
-```
-
-## Testar em uma máquina só (sem rede)
-
-Simula o mestre e as 3 máquinas escravas como 4 processos no mesmo
-computador. Serve para conferir se o programa está funcionando.
-
-```sh
-cd codigo_fonte
-make mpi
-mpirun -np 4 ./mandelbrot_mpi
-```
-
-A imagem é gravada em `codigo_fonte/saida.ppm`. Para ver:
-
-```sh
-sudo apt-get install -y imagemagick   # só na primeira vez
-convert saida.ppm saida.png
-explorer.exe saida.png                # abre no Windows (WSL)
-```
-
-## Rodar nas 3 máquinas
-
-Máquinas: notebook do José (mestre, WSL), notebook do Diego (WSL) e PC do
-laboratório (Ubuntu). Cada máquina pode ser **Linux nativo** ou **WSL no
-Windows**; o passo 2 tem uma opção para cada caso. As 3 precisam estar **na mesma rede Wi-Fi/LAN**.
-
-O notebook do José roda 2 processos (o mestre e uma máquina escrava); o do
-Diego e o do lab rodam 1 escravo cada — 4 processos no total.
-
-### Passo 1 — Nas 3 máquinas
-
-Clonar o repositório **dentro da pasta pessoal** (`~`), para o caminho ser
-o mesmo em todas, instalar as dependências e compilar:
+## Teste rápido (1 máquina, sem rede)
 
 ```sh
 cd ~
 git clone https://github.com/levyrodrigues23/mpi-mandelbrot-p1.git
 cd mpi-mandelbrot-p1
-bash setup_maquina.sh      # pede a senha do sudo (Linux ou WSL)
-cd codigo_fonte
-make mpi
-hostname -I                # anote o IP desta máquina
-whoami                     # anote o nome de usuário desta máquina
+bash setup_maquina.sh     # instala tudo e compila (pede a senha do sudo)
+# feche e abra o terminal
+./rodar.sh --local        # 4 processos nesta máquina; demora ~5 s
 ```
 
-### Passo 2 — Deixar a máquina acessível pela rede
+Tem que terminar com `OK! Imagem do mestre: .../saida.ppm`.
+Para ver a imagem: `convert codigo_fonte/saida.ppm saida.png` (pacote
+`imagemagick`) e `explorer.exe saida.png` no WSL.
 
-Cada máquina precisa aceitar conexões SSH vindas das outras. O que fazer
-depende de como ela roda Linux:
+## Arquivos
 
-#### Opção A — Linux nativo (ex.: PC do laboratório)
+| Arquivo | Para quê |
+|---|---|
+| `rodar.sh` | **Roda tudo** (`--local` ou nas máquinas do `hosts`). Só no mestre. |
+| `verificar.sh` | Diz o que está errado (MPI, SSH, programa) em cada máquina. |
+| `setup_maquina.sh` | Prepara uma máquina: instala, compila, aplica o conserto do hwloc. |
+| `hosts` | Máquinas e quantos processos cada uma roda. |
+| `codigo_fonte/mandelbrot_mpi.c` | Programa distribuído (C, MPI) — a entrega da P1. |
+| `codigo_fonte/mandelbrot_calc.c,.h` | Fórmulas do fractal e da cor em C puro. |
+| `codigo_fonte/mandelbrot.cpp` + `Mandel.h`, `Palette.*`, `Color.h`, `X11Display.*` | Versão **serial** original do professor (baseline, intocada). `make serial` precisa de `libx11-dev`. |
+| `codigo_fonte/mestre_escravo_exemplo.c` | Exemplo de referência do professor. |
 
-1. Garantir que o SSH está rodando:
-   ```sh
-   sudo systemctl enable --now ssh      # ou: sudo service ssh start
-   ```
-2. Se o firewall `ufw` estiver ativo (`sudo ufw status`), liberar a rede
-   local (trocar pela faixa da sua rede, ex. `192.168.0.0/24`):
-   ```sh
-   sudo ufw allow from 192.168.0.0/24
-   ```
-3. Se não tiver `sudo` nessa máquina, pedir ao técnico para instalar
-   `build-essential openmpi-bin libopenmpi-dev openssh-server`. Conferir
-   com `which mpicc mpirun sshd`.
+## Por que o `mpirun` travava (e como está resolvido)
 
-#### Opção B — WSL no Windows (ex.: notebooks do José e do Diego)
+No WSL o `mpirun` ficava **parado para sempre**, até num teste local: o
+hwloc (que o OpenMPI usa para descobrir o hardware) tenta conectar em um
+servidor gráfico X11 (`127.0.0.1:6001`) e essa conexão nunca responde. A
+solução é `HWLOC_COMPONENTS=-gl`:
 
-Por padrão o WSL não é visível para outros computadores da rede. Para
-resolver:
+- o `rodar.sh` já define isso;
+- o `setup_maquina.sh` grava a linha no começo do `~/.bashrc`, para valer
+  também nas outras máquinas quando o mestre entra nelas por SSH.
 
-1. No Windows, criar o arquivo `C:\Users\<seu_usuario>\.wslconfig` com:
-   ```
-   [wsl2]
-   networkingMode=mirrored
-   ```
-2. No PowerShell **como administrador**, liberar conexões de entrada no
-   WSL:
-   ```powershell
-   Set-NetFirewallHyperVVMSetting -Name '{40E0AC32-46A5-438A-A0B2-2B479E8F2E90}' -DefaultInboundAction Allow
-   New-NetFirewallRule -DisplayName "WSL SSH" -Direction Inbound -Protocol TCP -LocalPort 22 -Action Allow
-   ```
-3. Reiniciar o WSL: `wsl --shutdown` no PowerShell e abrir o Ubuntu de
-   novo.
-4. Conferir no Ubuntu que `hostname -I` mostra o mesmo IP do Windows na
-   Wi-Fi (`ipconfig` no PowerShell). Ignorar IPs `192.168.56.x` e
-   `172.x.x.x` (redes virtuais).
-5. Garantir que o SSH está rodando: `sudo service ssh start`.
-
-### Passo 3 — No notebook do José: SSH sem senha
-
-O `mpirun` usa SSH para iniciar os processos nas outras máquinas, então o
-notebook do José precisa entrar nelas sem senha.
-
-```sh
-ssh-keygen                                   # Enter em tudo (só na primeira vez)
-ssh-copy-id USUARIO_DO_DIEGO@IP_DO_DIEGO     # pede a senha do Diego uma vez
-ssh-copy-id USUARIO_DO_LAB@IP_DO_LAB         # pede a senha do lab uma vez
-```
-
-Como os nomes de usuário são diferentes em cada máquina, criar o arquivo
-`~/.ssh/config` com apelidos (trocar pelos IPs e usuários anotados no
-passo 1):
-
-```
-Host diego
-    HostName IP_DO_DIEGO
-    User USUARIO_DO_DIEGO
-
-Host lab
-    HostName IP_DO_LAB
-    User USUARIO_DO_LAB
-```
-
-Testar — os dois precisam responder `ok` **sem pedir senha**:
-
-```sh
-ssh diego echo ok
-ssh lab echo ok
-```
-
-### Passo 4 — No notebook do José: executar
-
-O arquivo `hosts` (na raiz do repositório) já usa os apelidos do passo 3:
-
-```
-localhost slots=2
-diego slots=1
-lab slots=1
-```
-
-Executar **a partir da pasta pessoal**:
-
-```sh
-cd ~
-mpirun --hostfile mpi-mandelbrot-p1/hosts -np 4 mpi-mandelbrot-p1/codigo_fonte/mandelbrot_mpi
-```
-
-O terminal mostra o mestre distribuindo linhas ("Mestre manda linha X
-para a maquina Y") e as máquinas calculando. No fim, a imagem fica em
-`~/saida.ppm` no notebook do José.
-
-### Se travar ou der erro
-
-- **Pede senha ao rodar o `mpirun`**: o passo 3 não funcionou; refazer o
-  `ssh-copy-id` e testar `ssh diego echo ok` / `ssh lab echo ok`.
-- **Trava sem terminar**: geralmente é firewall bloqueando a conexão
-  (Windows ou rede da UFC). Conferir o passo 2 em todas as máquinas.
-- **"No such file or directory" no executável**: o repositório não foi
-  clonado em `~/mpi-mandelbrot-p1` em alguma das máquinas, ou o
-  `make mpi` não foi rodado nela.
+Outros cuidados que o `rodar.sh` já faz: descobre a rede atual (o IP muda a
+cada Wi-Fi) e manda o MPI usar só ela; o SSH nunca fica esperando senha; e o
+programa é achado em `~/mpi-mandelbrot-p1` em cada máquina, mesmo com
+nomes de usuário diferentes.
