@@ -1,8 +1,8 @@
 # Quais maquinas participam e quantos processos ("slots") cada uma roda.
-# O ./rodar.sh soma os slots sozinho para decidir quantos processos abrir.
+# O numero de processos do mpirun (-np) e' a soma dos slots (aqui, 4).
 #
 # localhost = o mestre (notebook do Jose): roda o mestre + 1 escravo.
-# diego e lab = apelidos do ~/.ssh/config do mestre (ver GUIA_PASSO_A_PASSO.md).
+# diego e lab = apelidos do ~/.ssh/config do mestre.
 #
 # Para testar so com 2 maquinas, coloque # na frente da linha do lab.
 
