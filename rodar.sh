@@ -41,24 +41,29 @@ NP=$(awk '!/^[[:space:]]*#/ { for (i = 2; i <= NF; i++) if ($i ~ /^slots=/) { sp
 [ $QUEM -eq 1 ] || make -s -C "$DIR/codigo_fonte" mpi || { echo "ERRO: make mpi falhou (rode: bash setup_maquina.sh)"; exit 1; }
 
 # Faixa de rede em uso (ex.: 192.168.0.0/24). So quando ha maquinas remotas.
+# A placa de rede e' descoberta sozinha; para forcar uma: REDE_DEV=eth2 ./rodar.sh
 REDE=""
 if [ "$1" != "--local" ]; then
-    DEV=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i <= NF; i++) if ($i == "dev") { print $(i + 1); exit }}')
+    DEV="${REDE_DEV:-$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i <= NF; i++) if ($i == "dev") { print $(i + 1); exit }}')}"
     CIDR=$([ -n "$DEV" ] && ip -4 -o addr show dev "$DEV" | awk '{print $4; exit}')
     [ -n "$CIDR" ] && REDE=$(python3 -c 'import ipaddress,sys; print(ipaddress.ip_interface(sys.argv[1]).network)' "$CIDR")
 fi
+
 NETOPTS=()
 if [ -n "$REDE" ]; then
+    NETOPTS=(--mca oob_tcp_if_include "$REDE"
+             --mca btl_tcp_if_include "$REDE"
+             --mca oob_tcp_disable_family IPv6
+             --mca btl_tcp_disable_family IPv6)
     echo "Rede usada pelo MPI: $REDE (IP desta maquina: ${CIDR%/*})"
-    NETOPTS=(--mca oob_tcp_if_include "$REDE" --mca btl_tcp_if_include "$REDE"
-             --mca oob_tcp_disable_family IPv6 --mca btl_tcp_disable_family IPv6)
 fi
 
 echo "Rodando $NP processos (hosts: $HOSTFILE)"
 if [ $QUEM -eq 1 ]; then
     PROGRAMA=(hostname)
 else
-    PROGRAMA=(/bin/bash -c 'if [ "$(hostname)" = "$MESTRE_HOST" ]; then cd "$MESTRE_DIR/codigo_fonte"; else cd ~/mpi-mandelbrot-p1/codigo_fonte; fi && exec ./mandelbrot_mpi')
+    # ~/.apelido_mpi (opcional) = nome que aparece nas mensagens, ex.: diego
+    PROGRAMA=(/bin/bash -c 'export APELIDO="$(cat ~/.apelido_mpi 2>/dev/null)"; if [ "$(hostname)" = "$MESTRE_HOST" ]; then cd "$MESTRE_DIR/codigo_fonte"; else cd ~/mpi-mandelbrot-p1/codigo_fonte; fi && exec ./mandelbrot_mpi')
 fi
 mpirun --hostfile "$HOSTFILE" -np "$NP" "${NETOPTS[@]}" \
     --mca plm_rsh_agent "${AGENTE_SSH:-ssh -o BatchMode=yes -o ConnectTimeout=10}" \

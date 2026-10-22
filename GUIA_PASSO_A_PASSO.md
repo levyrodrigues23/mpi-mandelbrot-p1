@@ -1,7 +1,7 @@
-# Guia rápido — Mandelbrot MPI em 2 máquinas
+# Guia rápido — Mandelbrot MPI em 3 máquinas
 
 **José = mestre** (roda tudo, calcula 2 processos) · **Diego = escravo** (calcula 1).
-Só o José roda `./rodar.sh`. Para usar o lab também, veja o final.
+Só o José roda `./rodar.sh`. O arquivo `hosts` já vem com as 3 máquinas (José, Diego e lab); para usar só 2, comente a linha do lab.
 
 ## 1. Em casa — nas DUAS máquinas
 
@@ -74,11 +74,11 @@ Na execução, cada linha mostra o **nome do computador** que a calculou, ex.:
 | pede senha / `Permission denied` | refazer `ssh-copy-id` |
 | `timed out` / `refused` | `sudo service ssh start` lá; conferir o IP no `~/.ssh/config`; `ping IP` |
 | `ping` falha entre as máquinas | Wi-Fi isola clientes → usar hotspot do celular |
-| `ssh` ok, mas `mpirun` trava depois | firewall: refazer o passo 2 (item 2) |
+| `ssh` ok, mas `mpirun` trava depois | firewall: refazer o passo 2 (item 2); se o notebook tiver várias placas, force a certa: `REDE_DEV=eth2 ./rodar.sh` (ver `ip -4 addr`) |
 | `No such file or directory` | programa não está em `~/mpi-mandelbrot-p1` nessa máquina (passo 1) |
 
 ## Com o lab (3 máquinas)
 
 Passo 1 no lab (Linux: `sudo systemctl enable --now ssh`; sem sudo, peça ao técnico
 `build-essential openmpi-bin libopenmpi-dev openssh-server`). No José, adicione o bloco
-`Host lab` no `~/.ssh/config`, rode `ssh-copy-id lab` e tire o `#` da linha `lab` em `hosts`.
+`Host lab` no `~/.ssh/config`, rode `ssh-copy-id lab` (a linha `lab` já está ativa no `hosts`).
