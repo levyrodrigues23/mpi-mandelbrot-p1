@@ -1,0 +1,412 @@
+\documentclass[a4paper,11pt]{article}
+\usepackage[portuguese]{babel}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[margin=2cm]{geometry}
+\usepackage{listings}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning}
+\usepackage{enumitem}
+\usepackage{float}
+\usepackage{tabularx}
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\lhead{Prova P1 -- Mandelbrot com MPI}
+\rhead{Guia: como funciona e como rodar}
+\cfoot{\thepage}
+
+\definecolor{dkgreen}{rgb}{0,0.5,0}
+\definecolor{fundo}{rgb}{0.96,0.96,0.96}
+\lstset{language=C, basicstyle=\small\ttfamily, frame=tb, columns=fullflexible,
+  keywordstyle=\color{blue}, commentstyle=\color{dkgreen}, showstringspaces=false,
+  breaklines=true, upquote=true, numbers=none, backgroundcolor=\color{fundo}, keepspaces=true}
+\lstdefinestyle{sh}{language=bash, keywordstyle=\color{black}}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{5pt}
+
+\begin{document}
+
+{\LARGE \textbf{Guia da P1 -- Mandelbrot distribuído com MPI}}\\[2pt]
+{\large Como funciona, o que cada arquivo faz e como rodar \quad|\quad José Levy e Diego Nascimento}
+
+\tableofcontents
+
+\section{O programa em uma frase}
+
+O mestre divide a imagem de 800$\times$600 em 600 linhas, manda uma linha por vez para cada máquina escrava, recebe as linhas calculadas de volta, coloca cada uma no lugar certo da imagem e no final grava \texttt{saida.ppm}.
+
+\section{Como tudo funciona}
+
+\subsection{Quem é quem}
+
+Cada cópia do programa é um \textbf{processo}, identificado por um número (\textit{rank}). O rank 0 é o mestre; os outros são escravos. O mestre não calcula, só distribui e junta; por isso o computador do mestre também roda um escravo, para não ficar com a CPU parada.
+
+\begin{center}
+\begin{tabular}{|l|l|l|}
+\hline
+\textbf{Máquina} & \textbf{Processos} & \textbf{Papel} \\ \hline
+WSL do José (\texttt{Pesquisa}), 192.168.0.4 & 2 & rank 0 = mestre, rank 1 = escravo \\ \hline
+VM Lubuntu (\texttt{jose-virtualbox}), 192.168.0.5 & 2 & ranks 2 e 3 = escravos \\ \hline
+\end{tabular}
+\end{center}
+
+Isso vem do arquivo de máquinas (\texttt{\textasciitilde/hosts\_vm}): \texttt{localhost slots=2} e \texttt{joselrds@192.168.0.5 slots=2}. Com o notebook do Diego ou o PC do lab, basta acrescentar uma linha por máquina (Seção~\ref{sec:mais}).
+
+\subsection{O caminho de um \texttt{mpirun}}
+
+\begin{enumerate}[leftmargin=*]
+  \item \textbf{Início, por SSH.} O \texttt{mpirun} lê o arquivo de máquinas e, para cada máquina remota, roda sozinho algo como \texttt{ssh joselrds@192.168.0.5 orted ...}. O \texttt{orted} é o ``ajudante'' do Open MPI: ele sobe na outra máquina e abre lá os processos do programa. Por isso o mestre precisa entrar nas outras máquinas por SSH \textbf{sem senha}.
+  \item \textbf{Execução, por TCP direto.} Depois disso o SSH não é mais usado: os processos trocam mensagens (\texttt{MPI\_Send}/\texttt{MPI\_Recv}) por conexões TCP entre os IPs das máquinas. Os escravos abrem conexões \textbf{de volta} para o mestre, e por isso o firewall do Windows precisa liberar a entrada no WSL.
+  \item \textbf{Fim.} O mestre grava \texttt{saida.ppm} na pasta de onde o \texttt{mpirun} foi chamado.
+\end{enumerate}
+
+\subsection{Como as mensagens andam}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[box/.style={draw, rounded corners, minimum width=3.4cm, minimum height=0.9cm, align=center}, >=Stealth]
+\node[box, fill=blue!10] (m) {\textbf{Mestre} (rank 0)\\monta a imagem};
+\node[box, fill=green!10, right=4.2cm of m, yshift=1.4cm] (e1) {Escravo 1 (Pesquisa)};
+\node[box, fill=green!10, right=4.2cm of m] (e2) {Escravo 2 (VM)};
+\node[box, fill=green!10, right=4.2cm of m, yshift=-1.4cm] (e3) {Escravo 3 (VM)};
+\foreach \e in {e1,e2,e3} {
+  \draw[->, thick, blue] (m.east) to[bend left=12] (\e.west);
+  \draw[->, thick, dkgreen] (\e.west) to[bend left=12] (m.east);
+}
+\node[blue, align=center, font=\small] at (3.3,2.2) {número da linha\\(\texttt{TAG\_TAREFA})};
+\node[dkgreen, align=center, font=\small] at (3.3,-2.2) {linha + 2400 bytes de cor\\(\texttt{TAG\_RESULTADO})};
+\end{tikzpicture}
+\end{figure}
+
+\begin{enumerate}[leftmargin=*]
+  \item Cada escravo começa mandando o \textbf{nome do computador} dele (\texttt{TAG\_NOME}). É isso que faz aparecer ``Maquina 2 (jose-virtualbox)'' na tela: a prova de que outro computador está calculando.
+  \item O mestre manda a linha 0 para o escravo 1, a linha 1 para o escravo 2, e assim por diante.
+  \item Cada vez que um escravo devolve uma linha, o mestre guarda a linha na imagem e \textbf{manda a próxima linha que falta para esse mesmo escravo}.
+  \item Quando acabam as 600 linhas, o mestre recebe as últimas e manda \texttt{END} ($-1$) para cada escravo, que encerra.
+  \item O mestre grava \texttt{saida.ppm}.
+\end{enumerate}
+
+\textbf{Por que linha por linha (distribuição dinâmica) e não 200 linhas fixas para cada um?} No Mandelbrot algumas linhas demoram muito mais que outras (a parte cinza roda as 20000 iterações em cada pixel). Com divisão fixa, uma máquina ficaria sobrecarregada e as outras paradas. Com a distribuição dinâmica, quem termina antes pega mais linhas. Na execução com a VM ficou: Pesquisa 363 linhas, VM 120 + 117. O escravo do Pesquisa pega mais porque está no mesmo computador do mestre e as respostas dele não passam pela rede.
+
+\section{Os arquivos mais importantes}
+
+\begin{center}
+\begin{tabularx}{\textwidth}{|p{6.3cm}|X|}
+\hline
+\textbf{Arquivo} & \textbf{O que tem} \\ \hline
+\texttt{codigo\_fonte/mandelbrot\_mpi.c} & \textbf{O programa distribuído}: mestre e escravo. É a entrega principal. \\ \hline
+\texttt{codigo\_fonte/mandelbrot\_calc.c/.h} & As fórmulas do fractal e da cor, copiadas do código do professor para C. \\ \hline
+\texttt{hosts} (ou \texttt{\textasciitilde/hosts\_vm}) & Quais máquinas participam e quantos processos cada uma roda. \\ \hline
+\texttt{codigo\_fonte/Makefile} & \texttt{make mpi} faz o mesmo que o \texttt{mpicc} da Seção~\ref{sec:passos}. \\ \hline
+\texttt{mestre\_escravo\_exemplo.c} & Exemplo do professor que serviu de base (sem alteração). \\ \hline
+\texttt{mandelbrot.cpp}, \texttt{Mandel.h}, \texttt{Palette.*},\newline \texttt{Color.h}, \texttt{X11Display.*} & Mandelbrot serial do professor, com janela X11 (sem alteração). \\ \hline
+\end{tabularx}
+\end{center}
+
+O zip \texttt{codigo\_P1\_mandelbrot\_mpi.zip} tem exatamente esses arquivos, idênticos aos do GitHub.
+
+\subsection{\texttt{mandelbrot\_mpi.c}: as definições}
+
+\begin{lstlisting}
+#define IMG_WIDTH   800
+#define IMG_HEIGHT  600
+#define MAXITER     20000
+#define TAG_TAREFA     110   /* mestre -> escravo: numero da linha     */
+#define TAG_RESULTADO  111   /* escravo -> mestre: a linha calculada   */
+#define TAG_NOME       112   /* escravo -> mestre: nome do computador  */
+#define END            -1    /* "acabou, pode encerrar"                */
+
+typedef struct {
+    int linha;                          /* qual linha e' esta        */
+    unsigned char pixels[IMG_WIDTH * 3];/* 800 pixels x (R, G, B)   */
+} LinhaResultado;
+\end{lstlisting}
+
+As \textit{tags} são etiquetas das mensagens: quem recebe pede uma tag específica e só recebe mensagens daquele tipo. O resultado viaja como uma \texttt{struct} inteira, numa mensagem só, com o número da linha junto. Por isso a ordem em que as linhas chegam não importa.
+
+\subsection{\texttt{mandelbrot\_mpi.c}: o \texttt{main}}
+
+O mesmo executável roda em todas as máquinas; o \texttt{main} só olha o \textit{rank} para decidir o papel: rank 0 chama \texttt{mestre()}, os outros chamam \texttt{escravo()} (igual ao exemplo do professor). Ele começa com \texttt{MPI\_Init} e termina com \texttt{MPI\_Finalize}.
+
+\subsection{\texttt{mandelbrot\_mpi.c}: o mestre}
+
+Primeiro manda uma linha para cada escravo; depois fica neste laço, que é o coração do programa:
+
+\begin{lstlisting}
+while (tarefa < IMG_HEIGHT) {
+    MPI_Recv(&resultado, sizeof(LinhaResultado), MPI_BYTE, MPI_ANY_SOURCE,
+             TAG_RESULTADO, MPI_COMM_WORLD, &stat);
+    memcpy(&imagem[(size_t) resultado.linha * IMG_WIDTH * 3],
+           resultado.pixels, IMG_WIDTH * 3);
+    MPI_Send(&tarefa, 1, MPI_INT, stat.MPI_SOURCE, TAG_TAREFA, MPI_COMM_WORLD);
+    tarefa++;
+}
+\end{lstlisting}
+
+\begin{itemize}[leftmargin=*]
+  \item \texttt{MPI\_ANY\_SOURCE}: aceita a resposta de \textbf{quem terminar primeiro}, sem esperar um escravo específico.
+  \item \texttt{stat.MPI\_SOURCE}: diz quem mandou; é para esse escravo que vai a próxima linha.
+  \item \texttt{memcpy}: aqui a figura é \textbf{integrada}. A linha $y$ começa na posição $y \times 800 \times 3$ do vetor da imagem.
+\end{itemize}
+
+Depois do laço sobra um resultado pendente por escravo: o mestre recebe cada um e responde com \texttt{END}. No fim, \texttt{salvar\_ppm} grava o vetor inteiro:
+
+\begin{lstlisting}
+fprintf(f, "P6\n%d %d\n255\n", largura, altura);   /* cabecalho do PPM */
+fwrite(imagem, 1, (size_t) largura * altura * 3, f); /* os pixels RGB    */
+\end{lstlisting}
+
+\subsection{\texttt{mandelbrot\_mpi.c}: o escravo}
+
+\begin{lstlisting}
+MPI_Get_processor_name(nome, &tam_nome);
+MPI_Send(nome, MPI_MAX_PROCESSOR_NAME, MPI_CHAR, 0, TAG_NOME, MPI_COMM_WORLD);
+
+while (1) {
+    MPI_Recv(&tarefa, 1, MPI_INT, 0, TAG_TAREFA, MPI_COMM_WORLD, &stat);
+    if (tarefa == END) {
+        break;
+    }
+    printf("Maquina %d (%s): calculando linha %d\n", rank, nome, tarefa);
+    calcula_linha(tarefa, resultado.pixels);
+    resultado.linha = tarefa;
+    MPI_Send(&resultado, sizeof(LinhaResultado), MPI_BYTE, 0, TAG_RESULTADO, MPI_COMM_WORLD);
+}
+\end{lstlisting}
+
+O escravo se apresenta (manda o nome do computador) e depois repete: recebe um número de linha, calcula, devolve. Se a variável \texttt{APELIDO} estiver definida (\texttt{mpirun -x APELIDO=diego ...}), ele usa o apelido no lugar do nome.
+
+\subsection{\texttt{mandelbrot\_mpi.c}: calcular uma linha}
+
+\begin{lstlisting}
+static void calcula_linha(int y, unsigned char *buf_linha)
+{
+    double dx = (ZMAX_R - ZMIN_R) / (double) IMG_WIDTH;
+    double dy = (ZMAX_I - ZMIN_I) / (double) IMG_HEIGHT;
+    for (x = 0; x < IMG_WIDTH; x++) {
+        double cr = ZMIN_R + (double) x * dx;   /* pixel (x, y) vira o  */
+        double ci = ZMIN_I + (double) y * dy;   /* ponto c = cr + ci*i  */
+        int iter = calc_point(cr, ci, MAXITER);
+        get_color(iter, MAXITER, &buf_linha[x*3], &buf_linha[x*3+1], &buf_linha[x*3+2]);
+    }
+}
+\end{lstlisting}
+
+É o mesmo mapeamento do \texttt{Mandel::calcAndShow} do professor ($c = z_{min} + (x \cdot dx,\; y \cdot dy)$), só que para uma linha $y$ fixa, e com a mesma região com zoom.
+
+\subsection{\texttt{mandelbrot\_calc.c}: as fórmulas}
+
+\begin{lstlisting}
+int calc_point(double cr, double ci, int maxiter)
+{
+    double zr = 0.0, zi = 0.0, novo_zr, novo_zi, m2;
+    int iter = 0;
+    do {
+        novo_zr = zr * zr - zi * zi + cr;   /* (a+bi)^2 = (a^2-b^2) + 2abi */
+        novo_zi = 2.0 * zr * zi + ci;
+        zr = novo_zr;
+        zi = novo_zi;
+        m2 = zr * zr + zi * zi;             /* |z|^2 */
+        iter++;
+    } while (m2 < 4.0 && iter < maxiter);
+    return iter;
+}
+\end{lstlisting}
+
+É a iteração $z_{n+1} = z_n^2 + c$ do \texttt{Mandel::calcPoint}, sem \texttt{std::complex}: a parte real e a imaginária ficam em duas variáveis \texttt{double}. O número de iterações vira cor em \texttt{get\_color}, que é a mesma senoide do \texttt{RGBPalette::getColor} com os mesmos parâmetros (\texttt{0.4, 0.95, 0.65, 0.45, 0.5, 0.5, 0.5}):
+
+\begin{lstlisting}
+double n  = (double) iter / (double) maxiter;
+double ne = pow(n, PALETTE_EXP);
+double fr = pow(sin(ne * 5 * 3.14 * PALETTE_FREQ_R + PALETTE_FASE_R * 10 * 3.14 / 2), 2);
+/* fg e fb iguais, com as frequencias de G e B; depois de 0..1 para 0..255 */
+\end{lstlisting}
+
+Reescrevemos só essas duas funções em C porque o exemplo de MPI do professor é em C (\texttt{mpicc}) e o serial é C++ com janela X11: assim as máquinas escravas não precisam de interface gráfica.
+
+\section{Passo a passo do zero: WSL (mestre) + VM Lubuntu}
+\label{sec:passos}
+
+Todos os comandos são digitados à mão; nenhum script é usado. Os exemplos usam os nossos dados: usuário \texttt{joselrds}, IP da VM 192.168.0.5, rede 192.168.0.x.
+
+\subsection{Na VM: instalar e compilar (rede em NAT, com internet)}
+
+Na instalação do Lubuntu, ``Apagar disco'' só apaga o disco virtual da VM.
+
+\begin{lstlisting}[style=sh]
+sudo apt update
+sudo apt install -y git build-essential openmpi-bin libopenmpi-dev openssh-server
+sudo systemctl enable --now ssh          # SSH ligado sempre que a VM iniciar
+cd ~
+git clone https://github.com/levyrodrigues23/mpi-mandelbrot-p1.git
+cd ~/mpi-mandelbrot-p1/codigo_fonte
+mpicc -O2 -o mandelbrot_mpi mandelbrot_mpi.c mandelbrot_calc.c -lm
+mpirun --oversubscribe -np 4 ./mandelbrot_mpi   # teste local: gera saida.ppm
+which mpirun                                    # tem que ser /usr/bin/mpirun
+whoami
+sudo poweroff
+\end{lstlisting}
+
+\texttt{mpicc} é o \texttt{gcc} com o MPI; \texttt{-O2} (letra O) liga as otimizações, \texttt{-o mandelbrot\_mpi} dá o nome do executável (sem \texttt{.c}) e \texttt{-lm} liga a biblioteca de matemática. O projeto tem que ficar em \texttt{\textasciitilde/mpi-mandelbrot-p1}, o mesmo caminho do mestre. Se ele estiver em outra pasta, um atalho resolve (no nosso caso, a VM tinha o projeto em \texttt{\textasciitilde/Documents/prova}):
+
+\begin{lstlisting}[style=sh]
+ln -s ~/Documents/prova/mpi-mandelbrot-p1 ~/mpi-mandelbrot-p1
+\end{lstlisting}
+
+\subsection{No VirtualBox: rede em modo Bridge}
+
+\begin{enumerate}[leftmargin=*]
+  \item No PowerShell, \texttt{Get-NetAdapter} mostra qual placa está com \textbf{Status Up} (no nosso caso, o adaptador Ethernet USB; o Wi-Fi estava desconectado).
+  \item Configurações da VM $\rightarrow$ Rede $\rightarrow$ \textbf{Placa em modo Bridge} $\rightarrow$ Nome: essa placa. Em Avançado, \textbf{Cabo conectado} marcado.
+  \item Ligar a VM e conferir com \texttt{ip -4 addr}: tem que aparecer um IP da mesma faixa do Windows (ex.: 192.168.0.5). Se aparecer só \texttt{127.0.0.1}, a placa escolhida está errada.
+\end{enumerate}
+
+\subsection{No Windows: WSL visível na rede (uma vez)}
+
+Arquivo \texttt{C:\textbackslash Users\textbackslash josel\textbackslash .wslconfig}:
+\begin{lstlisting}[style=sh]
+[wsl2]
+networkingMode=mirrored
+\end{lstlisting}
+No PowerShell como administrador:
+\begin{lstlisting}[style=sh]
+Set-NetFirewallHyperVVMSetting -Name '{40E0AC32-46A5-438A-A0B2-2B479E8F2E90}' -DefaultInboundAction Allow
+wsl --shutdown
+\end{lstlisting}
+O modo espelhado faz o WSL usar o mesmo IP do Windows; o segundo comando libera as conexões de entrada no WSL. O \texttt{ping} da VM para o WSL pode falhar (o Windows bloqueia ping), mas o que importa é o TCP: \texttt{ssh josel@192.168.0.4} a partir da VM tem que pedir senha.
+
+\subsection{No WSL: instalar e compilar}
+
+\begin{lstlisting}[style=sh]
+sudo apt update
+sudo apt install -y git build-essential openmpi-bin libopenmpi-dev openssh-server imagemagick
+sudo service ssh start
+which mpirun mpicc orted     # os tres em /usr/bin: o MESMO Open MPI da VM
+hostname -I                  # mesma faixa da VM, ex.: 192.168.0.4
+grep HWLOC ~/.bashrc || sed -i '1i export HWLOC_COMPONENTS=-gl' ~/.bashrc
+cd ~
+git clone https://github.com/levyrodrigues23/mpi-mandelbrot-p1.git
+cd ~/mpi-mandelbrot-p1/codigo_fonte
+mpicc -O2 -o mandelbrot_mpi mandelbrot_mpi.c mandelbrot_calc.c -lm
+\end{lstlisting}
+A linha do \texttt{HWLOC\_COMPONENTS} evita que o \texttt{mpirun} trave no WSL (o \texttt{hwloc} tenta falar com um servidor gráfico que não responde). Ela vai na \textbf{primeira linha} do \texttt{\textasciitilde/.bashrc} para valer também nas sessões SSH. Depois de mexer no \texttt{.bashrc}, feche a janela do Ubuntu e abra outra.
+
+\subsection{No WSL: SSH sem senha até a VM}
+
+\begin{lstlisting}[style=sh]
+cd ~
+ls ~/.ssh/id_*.pub || ssh-keygen      # so cria a chave se nao existir
+ssh-copy-id joselrds@192.168.0.5      # pede a senha da VM uma unica vez
+ssh joselrds@192.168.0.5 hostname     # mostra o nome da VM SEM pedir senha
+\end{lstlisting}
+O último comando só mostra o nome e volta. Se você entrar na VM com \texttt{ssh} (o prompt vira \texttt{joselrds@jose-virtualbox}), digite \texttt{exit} antes de continuar: o \texttt{mpirun} roda \textbf{no WSL}.
+
+\subsection{No WSL: arquivo de máquinas e execução}
+
+\begin{lstlisting}[style=sh]
+cd ~
+nano hosts_vm
+# conteudo:
+localhost slots=2
+joselrds@192.168.0.5 slots=2
+\end{lstlisting}
+
+Com o prompt \texttt{josel@Pesquisa:\textasciitilde\$} (pasta pessoal):
+
+\begin{lstlisting}[style=sh]
+mpirun --hostfile hosts_vm -np 4 \
+  --mca btl_tcp_if_include 192.168.0.0/24 \
+  --mca oob_tcp_if_include 192.168.0.0/24 \
+  hostname                                  # 2x Pesquisa e 2x jose-virtualbox
+
+mpirun --hostfile hosts_vm -np 4 \
+  --mca btl_tcp_if_include 192.168.0.0/24 \
+  --mca oob_tcp_if_include 192.168.0.0/24 \
+  mpi-mandelbrot-p1/codigo_fonte/mandelbrot_mpi
+
+convert saida.ppm saida.png && explorer.exe saida.png
+\end{lstlisting}
+
+O que cada parte faz:
+\begin{itemize}[leftmargin=*]
+  \item \texttt{-{}-hostfile hosts\_vm} e \texttt{-np 4}: as máquinas do arquivo e o total de processos (a soma dos \texttt{slots}).
+  \item \texttt{oob\_tcp\_if\_include}: a rede que o \texttt{mpirun} usa para controlar os processos. \texttt{btl\_tcp\_if\_include}: a rede das mensagens do programa. \texttt{192.168.0.0/24} quer dizer ``todos os IPs que começam com 192.168.0'' (os três primeiros números dos IPs + \texttt{.0/24}). Sem isso o Open MPI tenta as placas virtuais do WSL e trava.
+  \item \texttt{hostname} no lugar do programa: teste rápido que mostra em qual computador cada processo abriu.
+  \item O caminho do programa é relativo à pasta pessoal. Na VM, onde \texttt{/home/josel} não existe, o processo começa na pasta pessoal de lá (\texttt{/home/joselrds}), e o mesmo caminho funciona.
+\end{itemize}
+
+\section{Adicionando mais máquinas (notebook do Diego, PC do lab)}
+\label{sec:mais}
+
+As máquinas têm que estar no \textbf{mesmo roteador} (IP começando com 192.168.0.). Em cada máquina nova: os mesmos passos do WSL (Seção~\ref{sec:passos}), incluindo o \texttt{.wslconfig} e o firewall se for WSL. Antes, conferir que não há um Open MPI antigo no \texttt{PATH}:
+
+\begin{lstlisting}[style=sh]
+grep -n ompi-igual ~/.bashrc ~/.profile                # se aparecer algo:
+sed -i '/ompi-igual/s/^/# /' ~/.bashrc ~/.profile      # e abrir um terminal novo
+\end{lstlisting}
+
+No WSL do José:
+\begin{lstlisting}[style=sh]
+ssh-copy-id USUARIO@IP_DA_MAQUINA
+ssh USUARIO@IP_DA_MAQUINA 'hostname; which mpirun orted; echo $HWLOC_COMPONENTS'
+# tem que responder sem senha: o nome, /usr/bin/mpirun, /usr/bin/orted e -gl
+\end{lstlisting}
+E uma linha nova no \texttt{hosts\_vm} (ex.: \texttt{USUARIO@IP\_DA\_MAQUINA slots=2}), trocando o \texttt{-np} pela nova soma dos slots (6, no exemplo).
+
+\section{Problemas que já aconteceram e a solução}
+
+\begin{center}
+\begin{tabularx}{\textwidth}{|X|X|}
+\hline
+\textbf{O que aparece} & \textbf{Causa e solução} \\ \hline
+VM só com \texttt{127.0.0.1} & Bridge na placa errada: usar a que está \textit{Up} no \texttt{Get-NetAdapter}. \\ \hline
+\texttt{git clone}: \textit{invalid username or token} & O repositório é privado e o GitHub não aceita a senha da conta: usar um token (\texttt{ghp\_...}) ou deixar o repositório público. \\ \hline
+\textit{undefined reference to main} & Faltou o \texttt{mandelbrot\_mpi.c} no \texttt{mpicc} (nome com \texttt{\_}, não espaço). \\ \hline
+\texttt{Data unpack had inadequate space} & Open MPI diferente entre as máquinas. No José, \texttt{which mpirun} apontava para \texttt{\textasciitilde/ompi-igual} (compilado à mão). Comentar as linhas no \texttt{.bashrc}, abrir terminal novo e recompilar. \\ \hline
+\textit{multiple definitions of the slot count} & O \texttt{mpirun} foi rodado de dentro da VM: \texttt{exit} e rodar no WSL. \\ \hline
+\textit{Could not resolve hostname locahost} & Erro de digitação no arquivo de máquinas (\texttt{localhost}). \\ \hline
+\textit{unable to open the hostfile} & O \texttt{mpirun} não foi chamado da pasta onde está o arquivo (\texttt{cd \textasciitilde}). \\ \hline
+\textit{could not access or execute an executable} & O programa não está em \texttt{\textasciitilde/mpi-mandelbrot-p1/codigo\_fonte} na outra máquina (usar o atalho \texttt{ln -s}). \\ \hline
+\texttt{mpirun} parado sem mostrar nada & Falta o \texttt{HWLOC\_COMPONENTS=-gl} ou as opções \texttt{-{}-mca ...\_if\_include}. \\ \hline
+\end{tabularx}
+\end{center}
+
+\section{Roteiro da apresentação (uns 5 minutos)}
+
+\begin{enumerate}[leftmargin=*]
+  \item \textbf{O problema} (30 s): o Mandelbrot serial do professor calcula pixel por pixel num processo só. Cada pixel é independente, então dá pra dividir.
+  \item \textbf{A ideia} (1 min): usamos o exemplo mestre/escravo do professor; a tarefa virou ``calcular uma linha''. Mostrar o diagrama da Seção 2.3.
+  \item \textbf{Por que linha por linha} (30 s): linhas têm custos muito diferentes; com distribuição dinâmica ninguém fica parado.
+  \item \textbf{Código} (1 min 30 s): abrir \texttt{mandelbrot\_mpi.c} e mostrar o laço do mestre e o do escravo.
+  \item \textbf{Rodar ao vivo} (1 min): o \texttt{mpirun} com \texttt{hostname} e depois com o programa. Apontar os nomes de computadores diferentes nas mensagens.
+  \item \textbf{Mostrar a imagem} (30 s): \texttt{convert saida.ppm saida.png} e abrir.
+\end{enumerate}
+
+\textbf{Plano B}: se a rede da sala não deixar as máquinas se verem, usar o hotspot do celular. Se nada funcionar, \texttt{mpirun -{}-oversubscribe -np 4 ./mandelbrot\_mpi} dentro de \texttt{codigo\_fonte} mostra o programa numa máquina só, e o relatório tem os prints das execuções em rede.
+
+\section{Perguntas que o professor pode fazer}
+
+\begin{description}[leftmargin=0pt, style=nextline]
+  \item[Onde cada máquina faz uma parte da imagem?]
+  Cada escravo calcula as linhas que recebe. Na saída aparece ``Maquina 2 (jose-virtualbox): calculando linha 7'': quem calculou cada linha.
+  \item[Onde o mestre integra a figura?]
+  No \texttt{memcpy} do laço do mestre: cada linha recebida é copiada para a posição \texttt{linha * 800 * 3} do vetor da imagem. No final, \texttt{salvar\_ppm} grava o vetor inteiro.
+  \item[Como o \texttt{mpirun} abre o programa na outra máquina?]
+  Por SSH (sem senha, com a chave copiada pelo \texttt{ssh-copy-id}): ele inicia o \texttt{orted} lá, que abre os processos. Depois as mensagens vão por TCP direto, sem SSH.
+  \item[Por que o mestre não calcula também?]
+  Seguimos o modelo do exemplo do professor, em que o mestre só coordena. Para não desperdiçar o computador do mestre, ele também roda um escravo (\texttt{slots=2}).
+  \item[Por que cada máquina não calcula o mesmo número de linhas?]
+  A distribuição é dinâmica: quem termina antes pega a próxima linha. Com a VM ficou 363 / 120 / 117.
+  \item[Por que reescreveram o cálculo em C?]
+  O exemplo de MPI é em C e o serial é C++ com janela X11. Passamos só \texttt{calcPoint} e \texttt{getColor} para C, com os mesmos parâmetros; os arquivos do professor não foram alterados.
+  \item[O que é o arquivo de máquinas e o \texttt{slots}?]
+  A lista das máquinas que o \texttt{mpirun} usa e quantos processos abre em cada uma.
+  \item[Que problema deu mais trabalho?]
+  Fazer as máquinas conversarem: WSL visível na rede, SSH sem senha, o \texttt{hwloc} travando o \texttt{mpirun} no WSL e a exigência de usar a mesma instalação do Open MPI em todas as máquinas (\texttt{Data unpack had inadequate space}).
+  \item[Como sabem que a imagem está certa?]
+  Mesma região, mesmas fórmulas e mesma paleta do serial. E, como está no relatório, a imagem da execução com o notebook do Diego e a da execução com o lab-ubuntu são idênticas byte a byte (\texttt{md5sum}).
+\end{description}
+
+\end{document}

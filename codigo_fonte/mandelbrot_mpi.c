@@ -145,8 +145,8 @@ static void escravo(void)
 
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
-    /* Usa o apelido da maquina (ex.: "diego") se o rodar.sh passou um;
-       senao, usa o nome do computador. */
+    /* Usa o apelido da maquina (ex.: "diego") se foi passado com
+       mpirun -x APELIDO=diego; senao, usa o nome do computador. */
     memset(nome, 0, sizeof(nome));
     if (getenv("APELIDO") != NULL && getenv("APELIDO")[0] != '\0') {
         strncpy(nome, getenv("APELIDO"), sizeof(nome) - 1);
