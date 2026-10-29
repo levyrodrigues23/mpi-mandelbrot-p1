@@ -9,10 +9,6 @@ máquinas, no modelo mestre/escravo do exemplo do professor
 imagem por vez para cada escravo, recebe as linhas calculadas, monta a
 imagem completa e grava `saida.ppm`.
 
-O guia completo (como funciona, os arquivos principais com trechos de
-código, o passo a passo e os problemas já resolvidos) está em
-[`GUIA_PASSO_A_PASSO.pdf`](GUIA_PASSO_A_PASSO.pdf).
-
 ## Arquivos
 
 | Arquivo | O que tem |
@@ -23,8 +19,6 @@ código, o passo a passo e os problemas já resolvidos) está em
 | `hosts` | Máquinas que participam e quantos processos cada uma roda. |
 | `codigo_fonte/mandelbrot.cpp`, `Mandel.h`, `Palette.*`, `Color.h`, `X11Display.*` | Mandelbrot serial do professor (sem alteração). |
 | `codigo_fonte/mestre_escravo_exemplo.c` | Exemplo mestre/escravo do professor (sem alteração). |
-| `entrega_p1/` | O que foi entregue: zip do código, guia em PDF e documentos da apresentação. |
-| `prints/` | Capturas de tela das execuções. |
 
 Tudo é feito com comandos padrão, digitados no terminal: `apt`, `git`,
 `mpicc`, `ssh` e `mpirun`.

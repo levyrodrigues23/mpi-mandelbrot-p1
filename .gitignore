@@ -3,3 +3,8 @@ codigo_fonte/mandelbrot
 codigo_fonte/mandelbrot_mpi
 codigo_fonte/saida.ppm
 codigo_fonte/saida.png
+
+# Material local (nao vai para o GitHub)
+GUIA_PASSO_A_PASSO.pdf
+entrega_p1/
+prints/
